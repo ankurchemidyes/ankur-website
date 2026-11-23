@@ -24,7 +24,7 @@ from pypdf import PdfReader
 START, END = date(2014,1,1), date(2026,11,21)
 BEFORE, AFTER = 10, 16
 drive.mount("/content/drive")
-ROOT=Path("/content/drive/MyDrive/BTC_15MIN_1H_2014_2026_V3_VERIFIED_ARCHIVES")
+ROOT=Path("/content/drive/MyDrive/BTC_15MIN_1H_2014_2026_V3_RESEARCH")
 DATA,OUTPUT,REPORT,TEMP=(ROOT/"_CACHE",ROOT/"ONE_15MIN_PDF_SET",
                          ROOT/"REPORTS",Path("/content/btc_pdf_local"))
 for p in [DATA,OUTPUT,REPORT,TEMP]: p.mkdir(parents=True,exist_ok=True)
