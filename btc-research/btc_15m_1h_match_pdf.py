@@ -23,7 +23,7 @@ from pypdf import PdfReader
 START, END = date(2014,1,1), date(2026,11,21)
 BEFORE, AFTER = 10, 16
 drive.mount("/content/drive")
-ROOT=Path("/content/drive/MyDrive/BTC_15MIN_1H_MATCH_PDF_V1")
+ROOT=Path("/content/drive/MyDrive/BTC_15MIN_1H_MATCH_PDF_V2_ORIGINAL_STYLE")
 DATA,OUTPUT,REPORT,TEMP=(ROOT/"_CACHE",ROOT/"ONE_15MIN_PDF_SET",
                          ROOT/"REPORTS",Path("/content/btc_pdf_local"))
 for p in [DATA,OUTPUT,REPORT,TEMP]: p.mkdir(parents=True,exist_ok=True)
@@ -240,7 +240,8 @@ for s in s15:
     s["matches"]=[x for _,x in seq[lo:hi]]
     name=f"15{s['code']}{t:%H%M}{t:%d}.pdf"
     s["filename"]=name
-    groups[name].append(s)
+    if s["matches"]:
+        groups[name].append(s)
     hour_strings=[]
     for h in s["matches"]:
         htime=h["time"]
@@ -256,103 +257,220 @@ for s in s15:
         "15M_source":s["source"],"15M_CRSI":float(df.crsi.iat[s["i"]])
     })
 pd.DataFrame(records).to_csv(REPORT/"ALL_SIGNALS_AND_1H_MATCHES.csv",index=False)
-print("One 15M PDF group count:",len(groups))
+print("One 15M matched-signal PDF group count:",len(groups))
+print("No-match cases are recorded in CSV, not generated as PDFs.")
 print("Matched 15M signal pages:",sum(bool(s["matches"]) for s in s15))
 
-GREEN=HexColor("#009E72");RED=HexColor("#D74B59")
-BLUE=HexColor("#1687CE");GRID=HexColor("#D5D8DE")
-GRAY=HexColor("#707580");BLACK=HexColor("#20252A")
-W,H=landscape(A4)
-def panel(pdf,frame,bounds,center,top,bottom,crbottom,crtop,label,marker):
-    segment=frame.segment.iat[center]
-    a,b=bounds[segment];start=max(a,center-BEFORE);stop=min(b,center+AFTER)
-    part=frame.iloc[start:stop+1]
-    o=part.open.to_numpy();hi=part.high.to_numpy();lo=part.low.to_numpy()
-    cl=part.close.to_numpy();st=part.st.to_numpy()
-    tr=part.trend.to_numpy();cr=part.crsi.to_numpy()
-    n=len(part);pos=center-start
-    x0,x1=58,751;dx=(x1-x0)/n
+# TradingView-like research layout: two full candlestick charts,
+# red/green SuperTrend flip arrows, and separate CRSI panels.
+# All plotted price points come from retrieved historical candles.
+from reportlab.lib.pagesizes import A3
+GREEN=HexColor("#078E63")
+RED=HexColor("#D44D58")
+BLUE=HexColor("#258FBE")
+GRID=HexColor("#D6DEE4")
+GRAY=HexColor("#697480")
+BLACK=HexColor("#222831")
+W,H=landscape(A3)
+
+def signal_arrow(pdf,x,y,direction,size=6):
+    pdf.setFillColor(GREEN if direction==1 else RED)
+    path=pdf.beginPath()
+    if direction==1:
+        path.moveTo(x,y+size)
+        path.lineTo(x-size,y-size/2)
+        path.lineTo(x+size,y-size/2)
+    else:
+        path.moveTo(x,y-size)
+        path.lineTo(x-size,y+size/2)
+        path.lineTo(x+size,y+size/2)
+    path.close()
+    pdf.drawPath(path,fill=1,stroke=0)
+
+def panel(pdf,frame,bounds,center,top,bottom,crbottom,crtop,label):
+    seg=int(frame.segment.iat[center])
+    a,b=bounds[seg]
+    start=max(a,center-BEFORE)
+    stop=min(b,center+AFTER)
+    p=frame.iloc[start:stop+1]
+    o=p.open.to_numpy()
+    hi=p.high.to_numpy()
+    lo=p.low.to_numpy()
+    cl=p.close.to_numpy()
+    st=p.st.to_numpy()
+    tr=p.trend.to_numpy()
+    cr=p.crsi.to_numpy()
+    n=len(p)
+    pos=center-start
+    x0,x1=78,1065
+    dx=(x1-x0)/n
     X=lambda k:x0+(k+.5)*dx
-    minp=min(lo.min(),st.min());maxp=max(hi.max(),st.max())
-    pad=max((maxp-minp)*.07,maxp*.001)
-    minp-=pad;maxp+=pad
+    minp=min(lo.min(),st.min())
+    maxp=max(hi.max(),st.max())
+    pad=max((maxp-minp)*.15,maxp*.001)
+    minp-=pad
+    maxp+=pad
     Y=lambda v:bottom+(v-minp)/(maxp-minp)*(top-bottom)
     R=lambda v:crbottom+v/100*(crtop-crbottom)
-    pdf.setFillColor(BLACK);pdf.setFont("Helvetica-Bold",9)
-    pdf.drawString(45,top+10,label)
-    for k in range(4):
-        v=minp+(maxp-minp)*k/3
-        pdf.setStrokeColor(GRID);pdf.setLineWidth(.4)
-        pdf.line(x0,Y(v),x1,Y(v))
-        pdf.setFillColor(GRAY);pdf.setFont("Helvetica",6)
-        pdf.drawString(755,Y(v)-2,f"{v:,.0f}")
+
+    pdf.setFillColor(BLACK)
+    pdf.setFont("Helvetica-Bold",11)
+    pdf.drawString(72,top+19,label)
+
+    for j in range(5):
+        price=minp+(maxp-minp)*j/4
+        pdf.setLineWidth(.5)
+        pdf.setStrokeColor(GRID)
+        pdf.line(x0,Y(price),x1,Y(price))
+        pdf.setFillColor(GRAY)
+        pdf.setFont("Helvetica",8)
+        pdf.drawString(1074,Y(price)-2,f"{price:,.2f}")
+
     for k in range(n):
         color=GREEN if cl[k]>=o[k] else RED
-        pdf.setStrokeColor(color);pdf.setFillColor(color)
-        pdf.setLineWidth(.7);pdf.line(X(k),Y(lo[k]),X(k),Y(hi[k]))
-        pdf.rect(X(k)-min(9,dx*.5)/2,min(Y(o[k]),Y(cl[k])),
-                 min(9,dx*.5),max(1,abs(Y(cl[k])-Y(o[k]))),stroke=0,fill=1)
-    pdf.setLineWidth(1.8)
+        pdf.setStrokeColor(color)
+        pdf.setFillColor(color)
+        pdf.setLineWidth(1)
+        pdf.line(X(k),Y(lo[k]),X(k),Y(hi[k]))
+        candle_width=min(15,dx*.52)
+        pdf.rect(X(k)-candle_width/2,
+                 min(Y(o[k]),Y(cl[k])),candle_width,
+                 max(1.7,abs(Y(cl[k])-Y(o[k]))),
+                 stroke=0,fill=1)
+
+    pdf.setLineWidth(3.0)
     for k in range(1,n):
         if tr[k]==tr[k-1]:
             pdf.setStrokeColor(GREEN if tr[k]==1 else RED)
             pdf.line(X(k-1),Y(st[k-1]),X(k),Y(st[k]))
-    pdf.setStrokeColor(RED if marker=="RED" else GREEN)
-    pdf.setDash(2,2);pdf.line(X(pos),crbottom,X(pos),top);pdf.setDash()
-    pdf.setFont("Helvetica",6.3);pdf.setFillColor(GRAY)
-    for k in sorted(set([0,pos,n-1]+list(range(0,n,max(1,n//5))))):
-        pdf.drawCentredString(X(k),bottom-13,
-            part.time.iat[k].strftime("%d/%m %H:%M"))
+
+    # Visible actual SuperTrend flips, not synthetic arrows.
+    for k in range(1,n):
+        if tr[k]!=tr[k-1]:
+            direction=int(tr[k])
+            if direction==1:
+                arrow_y=max(bottom+10,Y(lo[k])-13)
+            else:
+                arrow_y=min(top-10,Y(hi[k])+13)
+            signal_arrow(pdf,X(k),arrow_y,direction)
+
+    # Mark precisely the candle whose historical signal is being compared.
+    pdf.setStrokeColor(RED)
+    pdf.setLineWidth(1.2)
+    pdf.setDash(3,3)
+    pdf.line(X(pos),crbottom,X(pos),top)
+    pdf.setDash()
+
+    ticks=sorted(set([0,pos,n-1]+list(range(0,n,max(1,n//7)))))
+    pdf.setFont("Helvetica",8)
+    pdf.setFillColor(GRAY)
+    for k in ticks:
+        pdf.drawCentredString(
+            X(k),bottom-15,
+            p.time.iat[k].strftime("%d/%m %H:%M")
+        )
+
+    pdf.setFont("Helvetica",9)
+    pdf.setFillColor(GRAY)
+    pdf.drawString(x0,crtop+7,"CRSI (3,2,100)")
+
     for level in (30,50,70):
-        pdf.setStrokeColor(GRID);pdf.line(x0,R(level),x1,R(level))
-        pdf.setFillColor(GRAY);pdf.drawString(754,R(level)-2,str(level))
-    pdf.setStrokeColor(BLUE);pdf.setLineWidth(1.2)
+        pdf.setStrokeColor(GRID)
+        pdf.setLineWidth(.7)
+        pdf.setDash(4,3)
+        pdf.line(x0,R(level),x1,R(level))
+        pdf.setDash()
+        pdf.setFont("Helvetica",8)
+        pdf.setFillColor(GRAY)
+        pdf.drawString(1075,R(level)-3,str(level))
+
+    pdf.setStrokeColor(BLUE)
+    pdf.setLineWidth(2)
     for k in range(1,n):
         if np.isfinite(cr[k]) and np.isfinite(cr[k-1]):
             pdf.line(X(k-1),R(cr[k-1]),X(k),R(cr[k]))
+
     if np.isfinite(cr[pos]):
-        pdf.setFillColor(BLUE);pdf.circle(X(pos),R(cr[pos]),2.8,fill=1,stroke=0)
+        pdf.setFillColor(BLUE)
+        pdf.circle(X(pos),R(cr[pos]),4,fill=1,stroke=0)
+
 def render(pdf,s):
-    t=s["time"];color="GREEN" if s["direction"]==1 else "RED"
-    pdf.setFont("Helvetica-Bold",13);pdf.setFillColor(BLACK)
-    pdf.drawString(42,568,f"15M vs 1H | SuperTrend (1,1) | CRSI (3,2,100)")
+    # ONE PAGE = one real 15-minute signal paired with one
+    # real same-direction 1-hour SuperTrend flip.
+    assert s["matches"]
+    h=s["matches"][0]
+    t=s["time"]
+    ht=h["time"]
+    code15=f"15{s['code'].lower()}{t:%H%M}{t:%d}"
+    code1=f"1{h['code'].lower()}{ht:%H}{ht:%d}"
+    direction="GREEN" if s["direction"]==1 else "RED"
+    delta=int((t-ht).total_seconds()/60)
+
+    pdf.setFillColor(BLACK)
+    pdf.setFont("Helvetica-Bold",22)
+    pdf.drawString(72,790,f"{code15}/{code1}")
+
+    pdf.setFont("Helvetica",11)
+    pdf.drawString(
+        72,764,
+        f"15M {t:%Y-%m-%d %H:%M} UTC   |   "
+        f"1H {ht:%Y-%m-%d %H:%M} UTC   |   "
+        f"{direction} SuperTrend flip   |   15M-1H offset {delta:+d} min"
+    )
     pdf.setFont("Helvetica",9)
-    pdf.drawString(42,551,
-        f"15M: {t:%Y-%m-%d %H:%M} UTC | {s['code']} | {color} | {s['source']}")
-    matches=s["matches"]
-    if matches:
-        desc="; ".join(
-            f"1{h['code'].lower()}{h['time']:%H}{h['time']:%d} ({h['time']:%Y-%m-%d %H:%M} UTC)"
-            for h in matches[:3])
-        line="MATCH with 1H: "+desc
-        pdf.setFillColor(GREEN)
-    else:
-        line="NO MATCH: no same-direction 1H flip in the +/- matching window"
-        pdf.setFillColor(RED)
-    pdf.setFont("Helvetica-Bold",8.3);pdf.drawString(42,535,line[:155])
-    panel(pdf,df,b15,s["i"],514,409,350,375,
-          "15-MINUTE | selected signal",color)
-    if matches:
-        hidx=matches[0]["i"];hcolor=color
-        hlabel=f"1-HOUR | matched signal {matches[0]['time']:%Y-%m-%d %H:%M} UTC"
-    else:
-        idx=int(hour.time.searchsorted(t,side="right"))-1
-        hidx=max(0,idx)
-        if hour.source.iat[hidx]!=s["source"]:
-            hidx=None
-        hcolor=color
-        hlabel="1-HOUR | reference candles (no matching 1H signal)"
-    if hidx is not None:
-        panel(pdf,hour,b1h,hidx,303,196,126,152,hlabel,hcolor)
-    pdf.setFillColor(GRAY);pdf.setFont("Helvetica",7)
-    pdf.drawString(43,75,
-        "Historical matching: 1H 08:00 signal compares with 15M 07:00-08:45, inclusive.")
-    pdf.drawString(43,62,
-        "All times are UTC candle OPEN times; a signal is confirmed only after candle CLOSE.")
-    pdf.drawString(43,49,
-        "Month/year are retained inside charts; PDF filenames group by code, HHMM and day only.")
-    pdf.drawString(43,36,
-        "Bitstamp BTC/USD before Binance BTC/USDT; results may differ from TradingView indicators.")
+    pdf.drawString(
+        72,747,
+        f"Market: {s['source']}   |   "
+        f"15M CRSI {df.crsi.iat[s['i']]:.2f}   |   "
+        f"1H CRSI {hour.crsi.iat[h['i']]:.2f}"
+    )
+
+    panel(
+        pdf,df,b15,s["i"],
+        703,556,488,517,
+        "15-MINUTE  |  ORIGINAL HISTORICAL OHLC  |  SuperTrend (1,1)"
+    )
+    panel(
+        pdf,hour,b1h,h["i"],
+        418,271,203,232,
+        "1-HOUR  |  AGGREGATED FROM THE SAME 15M SOURCE  |  SuperTrend (1,1)"
+    )
+
+    pdf.setFillColor(BLACK)
+    pdf.setFont("Helvetica-Bold",11)
+    pdf.drawString(
+        72,153,
+        f"MATCH: same SuperTrend direction ({direction}); "
+        f"15M candle at {t:%H:%M} UTC, 1H candle at {ht:%H:%M} UTC"
+    )
+
+    if len(s["matches"])>1:
+        more=", ".join(
+            v["time"].strftime("%Y-%m-%d %H:%M")
+            for v in s["matches"][1:]
+        )
+        pdf.setFont("Helvetica",9)
+        pdf.drawString(72,135,"Other same-direction 1H matches: "+more[:160])
+
+    pdf.setFillColor(GRAY)
+    pdf.setFont("Helvetica",9)
+    pdf.drawString(
+        72,103,
+        "Research-only historical match: 1H 08:00 aligns with 15M 07:00-08:45 UTC."
+    )
+    pdf.drawString(
+        72,87,
+        "Times denote candle OPEN; 1H signal is confirmed after the 1H candle CLOSE."
+    )
+    pdf.drawString(
+        72,71,
+        "All original dates retained on each page; grouping ignores month and year."
+    )
+    pdf.drawString(
+        72,55,
+        "Bitstamp BTC/USD and Binance BTC/USDT are DIFFERENT markets; "
+        "check exact TradingView ticker and indicator settings."
+    )
     pdf.showPage()
 def pages(path):
     try:return len(PdfReader(str(path),strict=False).pages)
@@ -367,7 +485,7 @@ for count,(name,items) in enumerate(sorted(groups.items()),1):
     target=OUTPUT/name
     if pages(target)!=len(items):
         local=TEMP/name
-        pdf=canvas.Canvas(str(local),pagesize=landscape(A4),pageCompression=1)
+        pdf=canvas.Canvas(str(local),pagesize=landscape(A3),pageCompression=1)
         for s in items:render(pdf,s)
         pdf.save()
         if pages(local)!=len(items):
@@ -381,7 +499,8 @@ for count,(name,items) in enumerate(sorted(groups.items()),1):
     if count%50==0 or count==len(groups):
         print(f"PDFs complete: {count}/{len(groups)}")
 pd.DataFrame(summary).to_csv(REPORT/"PDF_GROUP_COUNTS.csv",index=False)
-print("DONE: only ONE 15M grouped PDF set.",OUTPUT)
-print("Total 15M signal pages:",len(s15))
+print("DONE: one matched-signal PDF set only.",OUTPUT)
+print("Total 15M detected signals:",len(s15))
+print("Matched 15M chart pages:",sum(len(items) for items in groups.values()))
 print("Total PDFs:",len(groups))
 print("Historical comparison ONLY: TradingView parity has not been independently verified.")
