@@ -228,11 +228,13 @@ if not s15:raise RuntimeError("No 15M signals were detected")
 lookups=defaultdict(list)
 for s in s1:lookups[(s["source"],s["direction"])].append((s["time"],s))
 for key in lookups:lookups[key].sort(key=lambda item:item[0])
+lookup_times={key:[t for t,_ in seq] for key,seq in lookups.items()}
 groups=defaultdict(list);records=[]
 for s in s15:
     t=s["time"]
-    seq=lookups.get((s["source"],s["direction"]),[])
-    times=[a for a,_ in seq]
+    key=(s["source"],s["direction"])
+    seq=lookups.get(key,[])
+    times=lookup_times.get(key,[])
     lo=bisect.bisect_left(times,t-pd.Timedelta(minutes=45))
     hi=bisect.bisect_right(times,t+pd.Timedelta(hours=1))
     s["matches"]=[x for _,x in seq[lo:hi]]
