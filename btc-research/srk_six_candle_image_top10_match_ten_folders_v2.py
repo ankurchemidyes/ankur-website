@@ -170,7 +170,7 @@ def candidate_features(window):
 def source_pdf_path(filename):
     direct=ORIGINALS/filename
     if direct.is_file(): return direct
-    number=int(re.fullmatch(r"SRK(\\d+)\\.pdf",filename,re.IGNORECASE).group(1))
+    number=int(re.fullmatch(r"SRK([0-9]+)[.]pdf",filename,re.IGNORECASE).group(1))
     part=min(10,(number-1)//1000+1)
     match=list(ORIGINALS.glob(f"SRK_PART_{part:02d}_*/{filename}"))
     if len(match)==1: return match[0]
