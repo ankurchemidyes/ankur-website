@@ -197,7 +197,10 @@ while i<n-1:
         "period":"OUT_OF_SAMPLE" if df.time.iat[entry_idx]>=TEST_SPLIT else "DEVELOPMENT"
     })
     i=exit_idx+1
-trade_df=pd.DataFrame(trades)
+trade_columns=["signal_utc","entry_utc","exit_utc","entry_price",
+               "stop_price","target_price","exit_price","exit_reason",
+               "gross_return_pct","net_return_pct","market","period"]
+trade_df=pd.DataFrame(trades,columns=trade_columns)
 trade_df.to_csv(OUT/"ALL_PAPER_TRADES.csv",index=False)
 
 def report(g):
